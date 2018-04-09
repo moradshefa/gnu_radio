@@ -88,9 +88,6 @@ def cnn_model_fn(features, labels, mode):
   #     tensors=tensors_to_log, every_n_iter=50)
 
 
-
-
-
 def main(unused_argv):
   # Load training and eval data
   valid_fm, invalid_fm = np.load("data/fm_data.npy")
@@ -156,7 +153,7 @@ def main(unused_argv):
   #   print(i, result)
 
 
-# Create the Estimator
+# Create the Estimator, save the model and the training
 mnist_classifier = tf.estimator.Estimator(
     model_fn=cnn_model_fn, model_dir="/tmp/fm_convnet_model1")
 
