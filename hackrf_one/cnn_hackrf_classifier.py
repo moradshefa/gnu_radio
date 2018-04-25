@@ -110,6 +110,7 @@ def main(unused_argv):
 
   print()
   signals = []
+  interval = 0
   for i, key in enumerate(ave_pspect_signals.keys()):
     num_samples, interval = ave_pspect_signals[key].shape
 
@@ -117,18 +118,17 @@ def main(unused_argv):
     train = ave_pspect_signals[key][:num_training_samples]
     test = ave_pspect_signals[key][num_training_samples:]
 
-    # print(train[3])
-
     signals.append(key)
     print(i, key, "Number of samples: ", num_samples)
-    print("     training on ", train.shape, " samples")
-    print("     validating on ", test.shape, " samples")
+    print("     training on ", train.shape[0], " samples")
+    print("     validating on ", test.shape[0], " samples")
 
     train_data.extend(train)
     train_labels.extend([i]*train.shape[0])
     test_data.extend(test)
     test_labels.extend([i]*test.shape[0])
-  
+    interval = test.shape[1]
+
 
 
   train_data = np.array(train_data).astype(np.float32)
@@ -136,32 +136,17 @@ def main(unused_argv):
 
   train_labels = np.array(train_labels).astype(np.int32)
   test_labels = np.array(test_labels).astype(np.int32)
-  
+
+  print("\n------------------------------------------------------------")
+  print("interval ", interval)
+
   print("train_data.shape", train_data.shape)
   print("test_data.shape", test_data.shape)
 
   print("train_labels.shape", train_labels.shape)
   print("test_labels.shape", test_labels.shape)
+  print("------------------------------------------------------------")
 
-
-  # valid_fm_train = valid_fm[:30]
-  # invalid_fm_train = invalid_fm[:30]
-
-  # valid_fm_test = valid_fm[30:]
-  # invalid_fm_test = invalid_fm[30:]
-
-  # training_data = np.vstack((valid_fm_train, invalid_fm_train))
-  # testing_data = np.vstack((valid_fm_test, invalid_fm_test))
-
-  # training_labels = np.vstack((np.ones((valid_fm_train.shape[0], 1)), np.zeros((invalid_fm_train.shape[0], 1))))
-  # testing_labels = np.vstack((np.ones((valid_fm_test.shape[0], 1)), np.zeros((invalid_fm_test.shape[0], 1))))
-
-
-
-  # train_data = training_data.astype(np.float32)
-  # train_labels = training_labels.astype(np.int32)
-  # eval_data = testing_data.astype(np.float32)
-  # eval_labels = testing_labels.astype(np.int32)
 
   # tensors_to_log = {"probabilities": "softmax_tensor"}
   # logging_hook = tf.train.LoggingTensorHook(
@@ -188,21 +173,41 @@ def main(unused_argv):
       num_epochs=1,
       shuffle=False)
   eval_results = mnist_classifier.evaluate(input_fn=eval_input_fn)
+  
+  print("\n------------------------------------------------------------")
+  print("Results on Test Data")
   print(eval_results)
+  print("------------------------------------------------------------")
+
+
+
+  eval_input_fn = tf.estimator.inputs.numpy_input_fn(
+      x={"x": train_data},
+      y=train_labels,
+      num_epochs=1,
+      shuffle=False)
+  eval_results = mnist_classifier.evaluate(input_fn=eval_input_fn)
+  print("\n------------------------------------------------------------")
+  print("Results on Training Data")
+  print(eval_results)
+  print("------------------------------------------------------------")
+
+
+
 
 
 
   # Sample Code on how to get predictions for all data
   
-  wifi = ave_pspect_signals["wifi_data"]
-  fm = ave_pspect_signals["fm_data"]
-  unclassified = ave_pspect_signals["unclassified_data"]
-  # all_data = np.vstack((wifi, fm, unclassified)).astype(np.float32)
+  # find misclassified data and print its information
+  true_vals = []
+  all_data = []
+  for i, name in enumerate(signals):
+    signal = ave_pspect_signals[name]
+    true_vals.extend([i]* len(signal))
+    all_data.extend(signal)
 
-
-  true_vals = [0] * len(unclassified) + [1] * len(fm) + [2]  * len(wifi)
-  all_data = np.vstack((unclassified, fm, wifi)).astype(np.float32)
-
+  all_data = np.array(all_data).astype(np.float32)
   pred_input_fn = tf.estimator.inputs.numpy_input_fn(
       x={"x": all_data},
       # y=eval_labels,
@@ -210,12 +215,16 @@ def main(unused_argv):
       shuffle=False)
   pred_results = mnist_classifier.predict(input_fn=pred_input_fn)
   
+
+
+  print("\n------------------------------------------------------------")
+  print("Misclassified points")
   for i, result in enumerate(pred_results):
     pred_class = result["classes"]
     true_class = true_vals[i]
     if true_class != pred_class:
       print(i,"True: ",signals[true_class]," Pred: ",  signals[pred_class], " Probab: ", result["probabilities"][pred_class], " Freq: ", center_freqs[i][1])
-
+  print("------------------------------------------------------------")
 
 
 # Create the Estimator, save the model and the training
