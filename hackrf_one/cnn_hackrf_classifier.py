@@ -16,13 +16,14 @@ def cnn_model_fn(features, labels, mode):
   """Model function for CNN."""
   # Input Layer
 
-  input_layer = tf.reshape(features["x"], [-1, 1, 2048, 1])
+  interval = 2048
+  input_layer = tf.reshape(features["x"], [-1, 1, interval, 1])
 
   # Convolutional Layer #1
   conv1 = tf.layers.conv2d(
       inputs=input_layer,
       filters=32,
-      kernel_size=[1, 5],
+      kernel_size=[1, 10],
       padding="same",
       activation=tf.nn.relu)
 
@@ -37,6 +38,7 @@ def cnn_model_fn(features, labels, mode):
       kernel_size=[1, 5],
       padding="same",
       activation=tf.nn.relu)
+
   p2 = 4
   pool2 = tf.layers.max_pooling2d(inputs=conv2, pool_size=[1, p2], strides=4)
 
@@ -45,14 +47,13 @@ def cnn_model_fn(features, labels, mode):
   # Dense Layer
   pool2_flat = tf.reshape(pool2, [-1, 2048//p1//p2 * 64])
 
-
-
   dense = tf.layers.dense(inputs=pool2_flat, units=1024, activation=tf.nn.relu)
   dropout = tf.layers.dropout(
       inputs=dense, rate=0.4, training=mode == tf.estimator.ModeKeys.TRAIN)
 
   # Logits Layer
-  logits = tf.layers.dense(inputs=dropout, units=2)
+  num_classes = 3
+  logits = tf.layers.dense(inputs=dropout, units=num_classes)
 
   predictions = {
       # Generate predictions (for PREDICT and EVAL mode)
@@ -92,29 +93,75 @@ def cnn_model_fn(features, labels, mode):
 
 def main(unused_argv):
   # Load training and eval data
-  valid_fm, invalid_fm = np.load("data/fm_data.npy")
 
-  valid_fm_train = valid_fm[:30]
-  invalid_fm_train = invalid_fm[:30]
+  ave_pspect_signals, center_freqs = np.load("ave_pspect_signals.npy")
+  # ave_pspect_signals = ave_pspect_signals
 
-  valid_fm_test = valid_fm[30:]
-  invalid_fm_test = invalid_fm[30:]
-
-  training_data = np.vstack((valid_fm_train, invalid_fm_train))
-  testing_data = np.vstack((valid_fm_test, invalid_fm_test))
-
-  training_labels = np.vstack((np.ones((valid_fm_train.shape[0], 1)), np.zeros((invalid_fm_train.shape[0], 1))))
-  testing_labels = np.vstack((np.ones((valid_fm_test.shape[0], 1)), np.zeros((invalid_fm_test.shape[0], 1))))
+  # 0.7 percent of data will be used to train, rest to validate
+  train_percentage = 0.8
 
 
+  train_data = []
+  test_data = []
 
-  train_data = training_data.astype(np.float32)
-  train_labels = training_labels.astype(np.int32)
-  eval_data = testing_data.astype(np.float32)
-  eval_labels = testing_labels.astype(np.int32)
+  train_labels = []
+  test_labels = []
 
-  print("train_data.shape ", train_data.shape)
-  print("train_labels.shape ", train_labels.shape)
+
+  print()
+  signals = []
+  for i, key in enumerate(ave_pspect_signals.keys()):
+    num_samples, interval = ave_pspect_signals[key].shape
+
+    num_training_samples = int(num_samples * train_percentage)
+    train = ave_pspect_signals[key][:num_training_samples]
+    test = ave_pspect_signals[key][num_training_samples:]
+
+    # print(train[3])
+
+    signals.append(key)
+    print(i, key, "Number of samples: ", num_samples)
+    print("     training on ", train.shape, " samples")
+    print("     validating on ", test.shape, " samples")
+
+    train_data.extend(train)
+    train_labels.extend([i]*train.shape[0])
+    test_data.extend(test)
+    test_labels.extend([i]*test.shape[0])
+  
+
+
+  train_data = np.array(train_data).astype(np.float32)
+  test_data = np.array(test_data).astype(np.float32)
+
+  train_labels = np.array(train_labels).astype(np.int32)
+  test_labels = np.array(test_labels).astype(np.int32)
+  
+  print("train_data.shape", train_data.shape)
+  print("test_data.shape", test_data.shape)
+
+  print("train_labels.shape", train_labels.shape)
+  print("test_labels.shape", test_labels.shape)
+
+
+  # valid_fm_train = valid_fm[:30]
+  # invalid_fm_train = invalid_fm[:30]
+
+  # valid_fm_test = valid_fm[30:]
+  # invalid_fm_test = invalid_fm[30:]
+
+  # training_data = np.vstack((valid_fm_train, invalid_fm_train))
+  # testing_data = np.vstack((valid_fm_test, invalid_fm_test))
+
+  # training_labels = np.vstack((np.ones((valid_fm_train.shape[0], 1)), np.zeros((invalid_fm_train.shape[0], 1))))
+  # testing_labels = np.vstack((np.ones((valid_fm_test.shape[0], 1)), np.zeros((invalid_fm_test.shape[0], 1))))
+
+
+
+  # train_data = training_data.astype(np.float32)
+  # train_labels = training_labels.astype(np.int32)
+  # eval_data = testing_data.astype(np.float32)
+  # eval_labels = testing_labels.astype(np.int32)
 
   # tensors_to_log = {"probabilities": "softmax_tensor"}
   # logging_hook = tf.train.LoggingTensorHook(
@@ -122,6 +169,7 @@ def main(unused_argv):
 
 
   # Train the model
+  training_steps = 11000
   train_input_fn = tf.estimator.inputs.numpy_input_fn(
       x={"x": train_data},
       y=train_labels,
@@ -130,13 +178,13 @@ def main(unused_argv):
       shuffle=True)
   mnist_classifier.train(
       input_fn=train_input_fn,
-      steps=10000,
+      steps=training_steps,
       # hooks=[logging_hook]
       )
 
   eval_input_fn = tf.estimator.inputs.numpy_input_fn(
-      x={"x": eval_data},
-      y=eval_labels,
+      x={"x": test_data},
+      y=test_labels,
       num_epochs=1,
       shuffle=False)
   eval_results = mnist_classifier.evaluate(input_fn=eval_input_fn)
@@ -146,21 +194,34 @@ def main(unused_argv):
 
   # Sample Code on how to get predictions for all data
   
-  # all_data = np.vstack((valid_fm, invalid_fm)).astype(np.float32)
-  # pred_input_fn = tf.estimator.inputs.numpy_input_fn(
-  #     x={"x": all_data},
-  #     # y=eval_labels,
-  #     num_epochs=1,
-  #     shuffle=False)
-  # pred_results = mnist_classifier.predict(input_fn=pred_input_fn)
+  wifi = ave_pspect_signals["wifi_data"]
+  fm = ave_pspect_signals["fm_data"]
+  unclassified = ave_pspect_signals["unclassified_data"]
+  # all_data = np.vstack((wifi, fm, unclassified)).astype(np.float32)
+
+
+  true_vals = [0] * len(unclassified) + [1] * len(fm) + [2]  * len(wifi)
+  all_data = np.vstack((unclassified, fm, wifi)).astype(np.float32)
+
+  pred_input_fn = tf.estimator.inputs.numpy_input_fn(
+      x={"x": all_data},
+      # y=eval_labels,
+      num_epochs=1,
+      shuffle=False)
+  pred_results = mnist_classifier.predict(input_fn=pred_input_fn)
   
-  # for i, result in enumerate(pred_results):
-  #   print(i, result)
+  for i, result in enumerate(pred_results):
+    pred_class = result["classes"]
+    true_class = true_vals[i]
+    if true_class != pred_class:
+      print(i,"True: ",signals[true_class]," Pred: ",  signals[pred_class], " Probab: ", result["probabilities"][pred_class], " Freq: ", center_freqs[i][1])
+
 
 
 # Create the Estimator, save the model and the training
 mnist_classifier = tf.estimator.Estimator(
-    model_fn=cnn_model_fn, model_dir="/tmp/fm_convnet_model1")
+   model_fn=cnn_model_fn, model_dir="/tmp/hackrf2")
+    # model_fn=cnn_model_fn)
 
 
 if __name__ == "__main__":
